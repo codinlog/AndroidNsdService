@@ -31,31 +31,19 @@ class MainActivity : AppCompatActivity() {
     private val that: Context by lazy {
         this@MainActivity
     }
-    private val mDevices = mutableListOf<Device>()
     private lateinit var binding: MainActivityBinding
     private lateinit var mNdsService: NsdServiceInfo
     private lateinit var mNdsManager: NsdManager
     private val mAdapter = DeviceAdapter()
     private val mHandler = Handler(Looper.getMainLooper(), Handler.Callback {
-        if (it.what == 1) {
-            mAdapter.submitList(mDevices)
+        binding.msg.text = when (it.what) {
+            100 -> "mDNS Discovery Started"
+            101 -> "mDNS Discovery Stopped"
+            else -> "Unknown"
         }
         return@Callback true
     })
     private val mModel: DeviceViewModel by viewModels()
-    private val mResolveListener = object : NsdManager.ResolveListener {
-
-        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-            // Called when the resolve fails. Use the error code to debug.
-        }
-
-        override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-            if (serviceInfo.serviceName == mServiceName) {
-                mModel.devices.value?.let {
-                }
-            }
-        }
-    }
     private val mRegistrationListener = object : NsdManager.RegistrationListener {
         override fun onRegistrationFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {
             Toast.makeText(that, "onRegistrationFailed", Toast.LENGTH_SHORT).show()
@@ -83,23 +71,29 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onDiscoveryStarted(serviceType: String?) {
+            mHandler.sendEmptyMessage(100)
             Toast.makeText(that, "onDiscoveryStarted $serviceType", Toast.LENGTH_SHORT).show()
         }
 
         override fun onDiscoveryStopped(serviceType: String?) {
+            mHandler.sendEmptyMessage(101)
             Toast.makeText(that, "onDiscoveryStopped $serviceType", Toast.LENGTH_SHORT).show()
         }
 
         override fun onServiceFound(serviceInfo: NsdServiceInfo?) {
-            mNdsManager.resolveService(serviceInfo,object : NsdManager.ResolveListener{
+            if (serviceInfo == null) {
+                return
+            }
+            mNdsManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                 override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {
-
+                    Toast.makeText(that, "onResolveFailed", Toast.LENGTH_SHORT).show()
                 }
+
                 override fun onServiceResolved(serviceInfo: NsdServiceInfo?) {
+                    if (serviceInfo == null) {
+                        return
+                    }
                     lifecycleScope.launch {
-                        if (serviceInfo == null) {
-                            return@launch
-                        }
                         with(serviceInfo) {
                             if (serviceName.isNullOrEmpty()) {
                                 serviceName = "unknown"
@@ -107,15 +101,18 @@ class MainActivity : AppCompatActivity() {
                             if (serviceType.isNullOrEmpty()) {
                                 serviceType = "unknown"
                             }
-                            mDevices.add(
-                                Device(
-                                    serviceName,
-                                    serviceType,
-                                    if (host == null) "unknown" else host.toString()
-                                )
+                            val device = Device(
+                                serviceName,
+                                serviceType,
+                                if (host == null) "unknown" else host.toString()
                             )
+                            mModel.devices.value?.let {
+                                if (!it.contains(device)) {
+                                    it.add(device)
+                                    mModel.devices.value = it
+                                }
+                            }
                         }
-                        mHandler.sendEmptyMessage(1)
                         Toast.makeText(that, "onServiceFound $serviceInfo", Toast.LENGTH_SHORT)
                             .show()
                     }
@@ -131,24 +128,10 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = setContentView(this, R.layout.activity_main)
-
         binding.rv.adapter = mAdapter
-        binding.callback = View.OnClickListener {
-            try {
-                mNdsManager.stopServiceDiscovery(mDiscoveryListener)
-                mNdsManager.unregisterService(mRegistrationListener)
-                registermDNS()
-            } catch (e: Exception) {
-
-            }
-            try {
-                mNdsManager.discoverServices(
-                    mServiceType,
-                    NsdManager.PROTOCOL_DNS_SD,
-                    mDiscoveryListener
-                )
-            }catch (e: Exception) {
-                Toast.makeText(that, "NdsManager Not Prepare", Toast.LENGTH_SHORT).show()
+        mModel.devices.observe(this) {
+            if(it.isNotEmpty()){
+                mAdapter.submitList(it)
             }
         }
         checkPermission()
@@ -204,10 +187,17 @@ class MainActivity : AppCompatActivity() {
             serviceType = mServiceType
             port = mPort
         }
-
         mNdsManager = (getSystemService(Context.NSD_SERVICE) as NsdManager).apply {
             registerService(mNdsService, NsdManager.PROTOCOL_DNS_SD, mRegistrationListener)
         }
+        mHandler.postDelayed({
+            mNdsManager.discoverServices(
+                mServiceType,
+                NsdManager.PROTOCOL_DNS_SD,
+                mDiscoveryListener
+            )
+        }, 5 * 1000)
+
     }
 
     override fun onDestroy() {

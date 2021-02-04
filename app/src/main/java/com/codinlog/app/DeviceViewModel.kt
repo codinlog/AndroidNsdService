@@ -5,7 +5,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 
 class DeviceViewModel:ViewModel() {
-    var devices = MutableLiveData<List<Device>>().apply {
-        value = arrayListOf()
+    var devices = MutableLiveData<MutableList<Device>>().apply {
+        value = mutableListOf()
     }
 }
