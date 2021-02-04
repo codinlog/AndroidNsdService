@@ -140,12 +140,15 @@ class MainActivity : AppCompatActivity() {
                 registermDNS()
             } catch (e: Exception) {
 
-            } finally {
+            }
+            try {
                 mNdsManager.discoverServices(
                     mServiceType,
                     NsdManager.PROTOCOL_DNS_SD,
                     mDiscoveryListener
                 )
+            }catch (e: Exception) {
+                Toast.makeText(that, "NdsManager Not Prepare", Toast.LENGTH_SHORT).show()
             }
         }
         checkPermission()
